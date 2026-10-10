@@ -21,9 +21,17 @@ void setup() {
 void loop() { // нескінченний цикл — серце програми
 
     u16_t adc_value = analogRead(LDR);
-
     Serial.printf("adc value %d \n", adc_value);
 
+    if (adc_value < 2000)
+    {
+      digitalWrite(LED, HIGH);
+    }
+    else 
+    {
+      digitalWrite(LED, LOW);
+    }
+    
       // lastButtonState_B = buttonState;
       // lastTimeChange_B = millis();
       // if (buttonState == HIGH)
