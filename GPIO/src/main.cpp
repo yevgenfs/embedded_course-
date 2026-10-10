@@ -4,7 +4,7 @@
 
 #define LDR 2
 
-#define N 4
+#define N 32
 
 const u16_t LDR_THRESHOLD = 2000;
 
@@ -52,7 +52,7 @@ void setup() {
 }
 
 void loop() { // нескінченний цикл — серце програми
-  if ( millis() - lastTiimeChange > adcPeriod)
+  if (millis() - lastTiimeChange > adcPeriod)
   {
     lastTiimeChange = millis();
     u16_t adc_value = analogRead(LDR);
