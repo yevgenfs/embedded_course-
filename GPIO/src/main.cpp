@@ -1,35 +1,35 @@
 #include <Arduino.h>
 
+#define LED 17 
 
-#define LED_B 16 // blue
+#define LDR 2
 
-#define BUTTON_B 20 // blue
+// u8_t lastButtonState_B = 0;
+// u8_t ledState_B = 0;
 
-u8_t lastButtonState_B = 0;
-u8_t ledState_B = 0;
-
-u32_t debounceDuration = 100;
-u32_t lastTimeChange_B = 0;
+// u32_t debounceDuration = 100;
+// u32_t lastTimeChange_B = 0;
 
 
 void setup() {
-    pinMode(LED_B, OUTPUT); // налаштовуємо пін на ВИХІД (керування)
-    pinMode(BUTTON_B, INPUT_PULLDOWN); // налаштовуємо пін на ВХІД (керування)
+    pinMode(LED, OUTPUT); // налаштовуємо пін на ВИХІД (керування)
+    pinMode(LDR, INPUT); // налаштовуємо пін на ВХІД (керування)
     Serial.begin(115200);
     Serial.println("setuped\n");
 }
 
 void loop() { // нескінченний цикл — серце програми
-    u8_t buttonState = digitalRead(BUTTON_B);
-    if (buttonState != lastButtonState_B)
-    {
-      lastButtonState_B = buttonState;
-      lastTimeChange_B = millis();
-      if (buttonState == HIGH)
-      {
+
+    u16_t adc_value = analogRead(LDR);
+
+    Serial.printf("adc value %d \n", adc_value);
+
+      // lastButtonState_B = buttonState;
+      // lastTimeChange_B = millis();
+      // if (buttonState == HIGH)
+      // {
         
-        ledState_B = (ledState_B == HIGH) ? LOW : HIGH;
-        digitalWrite(LED_B, ledState_B);
-      }
-    }
+      //   ledState_B = (ledState_B == HIGH) ? LOW : HIGH;
+      //   digitalWrite(LED_B, ledState_B);
+      // }
 }
