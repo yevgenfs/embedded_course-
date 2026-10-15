@@ -9,21 +9,25 @@ void Button::init()
 
 void Button::poll()
 {
-    if (millis() - lastTimeChangeBtn > BTN_PERIOD_MS) // періодична пекревірка стану кнопки 
+    if (millis() - lastTimeChangeBtn > BTN_PERIOD_MS) // періодична пекревірка стану кнопки
     {
         lastTimeChangeBtn = millis();
         u16_t btn_value = digitalRead(BTN);
-        Serial.printf("btn raw value %d \n", btn_value);
 
         if (btn_value == HIGH)
         {
             if (btnTimekeeper == 0)
             {
-                btnTimekeeper = millis(); //  якщо кнопка нажата і каунтер на 0 тоді івент тіки трапився і ми присвоюєм цій змінні час івента 
+                btnTimekeeper = millis(); //  якщо кнопка нажата і каунтер на 0 тоді івент тіки трапився і ми присвоюєм цій змінні час івента
             }
             else if (millis() - btnTimekeeper > BTN_LONG_PRESS_MS)
             {
                 buttonState = true;
+                // while (true)
+                // {
+                    Serial.printf("btn %d \n", millis());
+                // }
+                delay(6000);
             }
         }
         else

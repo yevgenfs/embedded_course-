@@ -30,7 +30,7 @@ void Ldr::poll()
             ldrState = false;
         }
 
-        Serial.printf("adc raw value %d adc filtered  %d \n", adc_value, filtered_adc_value);
+        // Serial.printf("adc raw value %d adc filtered  %d \n", adc_value, filtered_adc_value);
     }
 }
 
