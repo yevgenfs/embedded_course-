@@ -15,15 +15,23 @@ void Ldr::init()
 
 void Ldr::poll()
 {
-    if (millis() - lastTimeChangeLdr > LDR_PERIOD_MS)
+    if (millis() - lastTimeChangeLdr > LDR_PERIOD_MS && err_count < 5)
     {
         lastTimeChangeLdr = millis();
         u16_t adc_value = analogRead(LDR);
         u16_t filtered_adc_value = movingAvg(adc_value);
+        if ( 0 == filtered_adc_value)
+        {
+            err_count++;
+            ldrState = true;
+            return;
+
+        }
 
         if (filtered_adc_value < LDR_THRESHOLD)
         {
             ldrState = true;
+            Serial.printf("adc raw value %d adc filtered  %d  %d \n", adc_value, filtered_adc_value , err_count );
         }
         else
         {

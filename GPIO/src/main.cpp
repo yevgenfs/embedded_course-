@@ -23,12 +23,11 @@ void setup()
   Serial.printf("setuped  %d \n", esp_reset_reason());
 }
 
-void loop() // while true
+void loop()
 {
-  esp_task_wdt_reset();
   // Serial.println("WDT reseted \n");
   ldr.poll();
-  button.poll();
+  
+  Serial.printf("led cond  %d %d \n", button.get_state(), ldr.get_state());
   led.handler(button.get_state() && ldr.get_state());
 }
-// }

@@ -14,6 +14,14 @@ void Button::poll()
         lastTimeChangeBtn = millis();
         u16_t btn_value = digitalRead(BTN);
 
+        uint32_t count = 10000;
+        while (!btn_value) {
+            count--;
+            if (0 == count)
+            {
+                break;
+            }
+        };
         if (btn_value == HIGH)
         {
             if (btnTimekeeper == 0)
@@ -27,7 +35,7 @@ void Button::poll()
                 // {
                     Serial.printf("btn %d \n", millis());
                 // }
-                delay(6000);
+                // delay(6000);
             }
         }
         else
