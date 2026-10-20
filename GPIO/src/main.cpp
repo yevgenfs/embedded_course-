@@ -4,12 +4,20 @@
 #define LED_PIN 18
 #define BTN_PIN 17
 
+// --- constexpr-конфіг: усе відоме наперед лягає у Flash ---
+constexpr u32_t LED_MASK = 1u << LED_PIN; // маска для MMIO-регістра
+constexpr u32_t WAIT_MIN = 1500;          // мін. пауза перед сигналом, мс
+constexpr u32_t WAIT_MAX = 4000;          // макс. пауза, мс
+constexpr u32_t DEBOUNCE_MS = 50;
+
 volatile bool BtnEvent = false;
 volatile u32_t BtnTime = 0;
+volatile u32_t LastPress = 0;
 
 u32_t waitTime = 0;
+u32_t signalTime = 0;
 u32_t result = 0;
-u32_t Delay = 0;
+u32_t delayTime = 0;
 
 enum State
 {
@@ -21,11 +29,25 @@ enum State
 
 State state = IDLE;
 
+void ledOn()
+{
+  GPIO.out_w1ts = LED_MASK; // керуєи ледом за допомогою регістрів out_w1ts для такого щоб виставити прапор
+}
+
+void ledOff()
+{
+  GPIO.out_w1tc = LED_MASK; // керуєи ледом за допомогою регістрів out_w1tc для такого щоб очистити прапор
+}
+
 void IRAM_ATTR onButton()
 {
-  BtnEvent = true;
-  BtnTime = millis();
-  Serial.println("interrupt");
+  u32_t now = millis();
+  if (now - LastPress > DEBOUNCE_MS)
+  {
+    LastPress = now;
+    BtnTime = now;
+    BtnEvent = true;
+  }
 }
 
 void io_init()
@@ -45,10 +67,10 @@ void setup()
 
 void loop()
 { // нескінченний цикл — серце програми
-
+  // знімаємо подію кнопки один раз за прохід (атомарно для нашого ядра)
   bool pressed = BtnEvent;
 
-  if (BtnEvent)
+  if (pressed)
   {
     BtnEvent = false;
   }
@@ -56,49 +78,45 @@ void loop()
   switch (state)
   {
   case IDLE:
-    digitalWrite(LED_PIN, LOW);
+    ledOff();
     if (pressed)
     {
       waitTime = millis();
-      Delay =  2000;
+      delayTime = WAIT_MIN + random(WAIT_MAX - WAIT_MIN); // випадкова пауза
       state = WAITING;
-      Serial.printf("press Start \n");
       BtnTime = 0;
-      Serial.printf("waitTime %d  Delay %d\n", waitTime, Delay);
+      Serial.println("stayready for signal");
     }
     break;
 
   case WAITING:
     if (pressed)
     {
-      waitTime = 0;
-      Delay = 0;
       state = IDLE;
-      Serial.println("false start\n");
-      BtnTime = 0;
+      Serial.println("false start press again to start");
     }
-    else if (millis() - waitTime > Delay )
+    else if (millis() - waitTime > delayTime)
     {
+      ledOn();
+      signalTime = millis();
       state = SIGNAL;
       Serial.println("start\n");
     }
     break;
+
   case SIGNAL:
-    digitalWrite(LED_PIN, HIGH);
     if (pressed)
     {
-      result = BtnTime - Delay;
+      ledOff();
+      result = BtnTime - signalTime;
       state = RESULT;
-      BtnTime = 0;
     }
     break;
 
   case RESULT:
-    Serial.printf("result %d\n", result);
+    Serial.printf("result %d ms \n", result);
     state = IDLE;
-    waitTime = 0;
-    Delay = 0;
-    Serial.printf("press Start \n");
+    Serial.println("press Start");
     break;
 
   default:
