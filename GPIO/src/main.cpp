@@ -1,9 +1,8 @@
 #include <Arduino.h>
+#include <stdint.h>
 
-
-#define LED_B 16 // blue
-
-#define BUTTON_B 20 // blue
+#define LED_PIN 18
+#define BTN_PIN 17
 
 u8_t lastButtonState_B = 0;
 u8_t ledState_B = 0;
@@ -12,24 +11,18 @@ u32_t debounceDuration = 100;
 u32_t lastTimeChange_B = 0;
 
 
+void io_init() {                     // Init()-патерн: явно й детерміновано
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BTN_PIN, INPUT_PULLDOWN);
+}
+
 void setup() {
-    pinMode(LED_B, OUTPUT); // налаштовуємо пін на ВИХІД (керування)
-    pinMode(BUTTON_B, INPUT_PULLDOWN); // налаштовуємо пін на ВХІД (керування)
     Serial.begin(115200);
+    io_init();
+    randomSeed(micros());
     Serial.println("setuped\n");
 }
 
 void loop() { // нескінченний цикл — серце програми
-    u8_t buttonState = digitalRead(BUTTON_B);
-    if (buttonState != lastButtonState_B)
-    {
-      lastButtonState_B = buttonState;
-      lastTimeChange_B = millis();
-      if (buttonState == HIGH)
-      {
-        
-        ledState_B = (ledState_B == HIGH) ? LOW : HIGH;
-        digitalWrite(LED_B, ledState_B);
-      }
-    }
+  
 }
