@@ -6,12 +6,12 @@
 #define PWM_FREQ 5000 // 5 кГц
 #define PWM_RES 8     // 8 біт → duty 0..255
 
-enum State
+enum Speed
 {
-  IDLE,
-  WAITING,
-  SIGNAL,
-  RESULT
+  off = 0,
+  low = 60,
+  mid = 150,
+  high = 255, // 100%
 };
 
 void io_init()
@@ -32,6 +32,29 @@ void setup()
 void loop()
 { // нескінченний цикл — серце програми
   // знімаємо подію кнопки один раз за прохід (атомарно для нашого ядра)
-
-  ledcWrite(PWM_CH, 150);
+  if (Serial.available())
+  {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "off")
+    {
+      ledcWrite(PWM_CH, off);
+    }
+    else if (cmd == "low")
+    {
+      ledcWrite(PWM_CH, low);
+    }
+    else if (cmd == "mid")
+    {
+      ledcWrite(PWM_CH, mid);
+    }
+    else if (cmd == "high")
+    {
+      ledcWrite(PWM_CH, high);
+    }
+    else 
+    {
+      Serial.println("не правильна команда (off / low / mid / high)");
+    }
+  }
 }
