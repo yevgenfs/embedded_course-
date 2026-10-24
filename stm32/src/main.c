@@ -1,4 +1,5 @@
 #include "stm32f4xx_hal.h"
+#include <stdbool.h>
 
 /* Red LED (on-board, active-low) */
 #define LED_R_PORT   GPIOC
@@ -18,6 +19,8 @@
 
 static volatile uint32_t last_press_r = 0;
 static volatile uint32_t last_press_g = 0;
+static volatile bool press_r = false;
+static volatile bool press_g = false;
 
 #define DEBOUNCE_MS 50
 
