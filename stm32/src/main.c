@@ -68,10 +68,10 @@ static void GPIO_Init(void)
     gpio.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(BTN_PORT, &gpio);
 
-    HAL_NVIC_SetPriority(BTN_IRQn, 2, 0);
+    HAL_NVIC_SetPriority(BTN_IRQn, 2, 1);
     HAL_NVIC_EnableIRQ(BTN_IRQn);
 
-    HAL_NVIC_SetPriority(BTN2_IRQn, 2, 0);
+    HAL_NVIC_SetPriority(BTN2_IRQn, 2, 2);
     HAL_NVIC_EnableIRQ(BTN2_IRQn);
 }
 
