@@ -94,64 +94,72 @@ static void TIM2_Init(void)
     HAL_NVIC_EnableIRQ(TIM2_IRQn);
 }
 
-/* ---------------- Interrupt handlers ---------------- */
-
-void SysTick_Handler(void)
+#ifdef __cplusplus
+extern "C"
 {
-    HAL_IncTick();
-}
+#endif
+    /* ---------------- Interrupt handlers ---------------- */
 
-void EXTI0_IRQHandler(void)
-{
-    HAL_GPIO_EXTI_IRQHandler(BTN_PIN);
-}
-
-/* EXTI lines 5..9 share one vector */
-void EXTI9_5_IRQHandler(void)
-{
-    HAL_GPIO_EXTI_IRQHandler(BTN2_PIN);
-}
-
-void TIM2_IRQHandler(void)
-{
-    HAL_TIM_IRQHandler(&htim2);
-}
-
-/* ---------------- Callbacks ---------------- */
-
-void HAL_GPIO_EXTI_Callback(uint16_t pin)
-{
-    if (BTN_PIN == pin)
+    void SysTick_Handler(void)
     {
-        HAL_NVIC_DisableIRQ(EXTI0_IRQn);
-
-        __HAL_TIM_SetCounter(&htim2, 0);
-        __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
-        HAL_TIM_Base_Start_IT(&htim2);
+        HAL_IncTick();
     }
-    else if (BTN2_PIN == pin)
+
+    void EXTI0_IRQHandler(void)
     {
-        HAL_GPIO_TogglePin(LED_PORT, GLED_PIN);
+        HAL_GPIO_EXTI_IRQHandler(BTN_PIN);
     }
-}
 
-/* Debounce window elapsed (button 1 only) */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    if (TIM2 == htim->Instance)
+    /* EXTI lines 5..9 share one vector */
+    void EXTI9_5_IRQHandler(void)
     {
-        HAL_TIM_Base_Stop_IT(&htim2);
+        HAL_GPIO_EXTI_IRQHandler(BTN2_PIN);
+    }
 
-        if (GPIO_PIN_SET == HAL_GPIO_ReadPin(BTN_PORT, BTN_PIN))
+    void TIM2_IRQHandler(void)
+    {
+        HAL_TIM_IRQHandler(&htim2);
+    }
+
+    /* ---------------- Callbacks ---------------- */
+
+    void HAL_GPIO_EXTI_Callback(uint16_t pin)
+    {
+        if (BTN_PIN == pin)
         {
-            HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
-        }
+            HAL_NVIC_DisableIRQ(EXTI0_IRQn);
 
-        __HAL_GPIO_EXTI_CLEAR_IT(BTN_PIN);
-        HAL_NVIC_ClearPendingIRQ(BTN_IRQn);
-        HAL_NVIC_EnableIRQ(BTN_IRQn);
+            __HAL_TIM_SetCounter(&htim2, 0);
+            __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
+            HAL_TIM_Base_Start_IT(&htim2);
+        }
+        else if (BTN2_PIN == pin)
+        {
+            HAL_GPIO_TogglePin(LED_PORT, GLED_PIN);
+        }
     }
+
+    /* Debounce window elapsed (button 1 only) */
+    void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+    {
+        if (TIM2 == htim->Instance)
+        {
+            HAL_TIM_Base_Stop_IT(&htim2);
+
+            if (GPIO_PIN_SET == HAL_GPIO_ReadPin(BTN_PORT, BTN_PIN))
+            {
+                HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+            }
+
+            __HAL_GPIO_EXTI_CLEAR_IT(BTN_PIN);
+            HAL_NVIC_ClearPendingIRQ(BTN_IRQn);
+            HAL_NVIC_EnableIRQ(BTN_IRQn);
+        }
+    }
+
+#ifdef __cplusplus
 }
+#endif
 
 void Error_Handler(void)
 {
