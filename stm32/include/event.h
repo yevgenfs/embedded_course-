@@ -7,7 +7,9 @@ extern "C" {
  
 typedef enum
 {
-
+    EVT_NONE = 0,
+    EVT_BTN_PRESS,
+    EVT_TIMEOUT,
 } event_type_t;
  
 typedef struct
