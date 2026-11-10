@@ -77,8 +77,8 @@ static void ADC_Init(void)
     hadc1.Init.Resolution = ADC_RESOLUTION_12B;
     hadc1.Init.ScanConvMode = DISABLE;
     hadc1.Init.ContinuousConvMode = DISABLE;
-    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T2_TRGO;
     hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
     hadc1.Init.NbrOfConversion = 1;
     hadc1.Init.DMAContinuousRequests = DISABLE;
@@ -108,10 +108,14 @@ static void TIM2_Init(void)
     htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
     HAL_TIM_Base_Init(&htim2);
 
-    HAL_NVIC_SetPriority(TIM2_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(TIM2_IRQn);
     __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
-    HAL_TIM_Base_Start_IT(&htim2);
+
+    TIM_MasterConfigTypeDef m = {0};
+    m.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    m.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim2, &m);
+    __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
+    HAL_TIM_Base_Start(&htim2);
 }
 
 void Error_Handler(void);
@@ -121,10 +125,12 @@ int main(void)
     HAL_Init();
     GPIO_Init();
     UART2_Init();
-    ADC_Init();
     TIM2_Init();
+    ADC_Init();
 
     setvbuf(stdout, NULL, _IONBF, 0); /* no buffering: text appears immediately */
+
+    HAL_ADC_Start_IT(&hadc1);
 
     while (1)
     {
@@ -154,25 +160,12 @@ extern "C"
         return len;
     }
 
-    void TIM2_IRQHandler(void)
-    {
-        HAL_TIM_IRQHandler(&htim2);
-    }
-
     void ADC_IRQHandler(void)
     {
         HAL_ADC_IRQHandler(&hadc1); /* calls HAL_ADC_ConvCpltCallback */
     }
 
     /* ---------------- Callbacks ---------------- */
-
-    void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-    {
-        if (TIM2 == htim->Instance)
-        {
-            HAL_ADC_Start_IT(&hadc1);
-        }
-    }
 
     void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     {
