@@ -7,16 +7,17 @@
 #define LDR_PIN GPIO_PIN_0
 #define LED_ACTIVE_HIGH 1
 
-#define TH_DARK  2100  /* filtered value below this  -> dark, LED ON  */
+#define TH_DARK 2100  /* filtered value below this  -> dark, LED ON  */
 #define TH_LIGHT 2700 /* filtered value above this  -> light, LED OFF */
 
 /* ---------- globals (shared with ISR context) ---------- */
-ADC_HandleTypeDef  hadc1;
-TIM_HandleTypeDef  htim2;
+ADC_HandleTypeDef hadc1;
+TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 volatile uint16_t g_raw = 0;
-volatile bool     g_new = false;
+volatile bool g_new = false;
+volatile bool g_dark = false;
 
 /* ---------- helpers ---------- */
 static void led_set(int on)
@@ -45,6 +46,11 @@ static void GPIO_Init(void)
     g.Alternate = GPIO_AF7_USART2;
     HAL_GPIO_Init(GPIO_PORT, &g);
 
+    g.Pin = LDR_PIN; /* LDR input */
+    g.Mode = GPIO_MODE_ANALOG;
+    g.Pull = GPIO_NOPULL;
+    g.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIO_PORT, &g);
 }
 
 static void UART2_Init(void)
@@ -64,6 +70,30 @@ static void UART2_Init(void)
 
 static void ADC_Init(void)
 {
+    __HAL_RCC_ADC1_CLK_ENABLE();
+
+    hadc1.Instance = ADC1;
+    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc1.Init.ScanConvMode = DISABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc1.Init.NbrOfConversion = 1;
+    hadc1.Init.DMAContinuousRequests = DISABLE;
+    hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    HAL_ADC_Init(&hadc1);
+
+    ADC_ChannelConfTypeDef ch = {0};
+
+    ch.Channel = ADC_CHANNEL_0;
+    ch.Rank = 1;
+    ch.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+    HAL_ADC_ConfigChannel(&hadc1, &ch);
+
+    HAL_NVIC_SetPriority(ADC_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(ADC_IRQn);
 }
 
 static void TIM2_Init(void)
@@ -140,11 +170,28 @@ extern "C"
     {
         if (TIM2 == htim->Instance)
         {
+            HAL_ADC_Start_IT(&hadc1);
         }
     }
 
     void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     {
+        if (ADC1 == hadc->Instance)
+        {
+            g_raw = (uint16_t)HAL_ADC_GetValue(hadc);
+            g_new = true;
+
+            if (!g_dark && g_raw < TH_DARK)
+            {
+                g_dark = true;
+                led_set(1);
+            }
+            else if (g_dark && g_raw > TH_LIGHT)
+            {
+                g_dark = false;
+                led_set(0);
+            }
+        }
     }
 
 #ifdef __cplusplus
