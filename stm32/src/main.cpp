@@ -40,6 +40,15 @@ volatile uint32_t g_vdda_mv = VDDA_NOMINAL_MV;
 /* ---------- helpers ---------- */
 static uint32_t duty_from_raw(uint16_t raw)
 {
+    if (PWM_RAW_DARK >= raw)
+    {
+        return PWM_STEPS;
+    }
+    if (PWM_RAW_LIGHT <= raw)
+    {
+        return 0;
+    }
+    return (uint32_t)(PWM_RAW_LIGHT - raw) * PWM_STEPS / (PWM_RAW_LIGHT - PWM_RAW_DARK);
 }
 
 static void GPIO_Init(void)
@@ -136,6 +145,13 @@ static void TIM2_Init(void)
     htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
     htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
     HAL_TIM_PWM_Init(&htim2);
+
+    TIM_OC_InitTypeDef oc = {0};
+    oc.OCMode = TIM_OCMODE_PWM1;
+    oc.Pulse = 0; 
+    oc.OCPolarity = TIM_OCPOLARITY_HIGH;
+    oc.OCFastMode = DISABLE;
+    HAL_TIM_PWM_ConfigChannel(&htim2, &oc, TIM_CHANNEL_2);
 
     TIM_MasterConfigTypeDef m = {0};
     m.MasterOutputTrigger = TIM_TRGO_UPDATE; /* update event -> TRGO -> ADC trigger (kept) */
@@ -235,7 +251,9 @@ extern "C"
         if (ADC1 == hadc->Instance)
         {
             uint16_t raw = (uint16_t)HAL_ADC_GetValue(hadc);
+            uint32_t duty = duty_from_raw(raw);
             
+            __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, duty);
 
             g_raw = raw;
             g_duty = duty;
