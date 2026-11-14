@@ -2,23 +2,27 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#define GPIO_PORT GPIOA
-#define LED_PIN GPIO_PIN_1
-#define LDR_PIN GPIO_PIN_0
-#define LED_ACTIVE_HIGH 1
+#define LDR_PORT GPIOA
+#define LDR_PIN GPIO_PIN_0 /* ADC1_IN0 */
+#define LED_PORT GPIOA
+#define LED_PIN GPIO_PIN_1 /* TIM2_CH2, AF1 */
+#define LED_ACTIVE_HIGH 1  /* 1 = LED lights with HIGH, 0 = lights with LOW (PWM output polarity) */
 
-#define TH_DARK 2100
-#define TH_LIGHT 2700
+#define PWM_FREQ_HZ 1000U
+#define TIM_TICK_HZ 1000000U /* 16 MHz / PSC 16 */
+#define PWM_PSC 16U
+#define PWM_ARR (TIM_TICK_HZ / PWM_FREQ_HZ - 1U)
+#define PWM_STEPS (PWM_ARR + 1U)
 
-#define LDR_PERIOD_MS 20U   /* 50 Hz */
+#define PWM_RAW_DARK 1500U
+#define PWM_RAW_LIGHT 3000U
+
+#define PRINT_EVERY 100U /* ADC runs at 1 kHz, print 10 lines per second */
+
+/* ---------- TIM5: trigger for the injected group (VREFINT) ---------- */
 #define VREF_PERIOD_MS 100U /* 10 Hz */
 
-/* ---------- VREFINT calibration ----------
- *   VDDA [mV] = 3300 * VREFINT_CAL / VREFINT_DATA
- *   Vin  [mV] = raw * VDDA / 4095
- * VREFINT_CAL: factory value measured at VDDA = 3.3 V, 30 C
- * (STM32F411: address 0x1FFF7A2A, check the datasheet table).
- */
+#define VREFINT_CAL_ADDR ((const uint16_t *)0x1FFF7A2AU)
 #define VDDA_NOMINAL_MV 3300U
 #define VREFINT_AVG_N 8 /* average of the last N VREFINT samples, 1 = no averaging */
 
@@ -29,15 +33,13 @@ TIM_HandleTypeDef htim5;
 UART_HandleTypeDef huart2;
 
 volatile uint16_t g_raw = 0;
+volatile uint32_t g_duty = 0; /* current CCR value */
 volatile bool g_new = false;
-volatile bool g_dark = false;
-volatile uint16_t g_vdda_mv = VDDA_NOMINAL_MV; /* updated by the injected-group interrupt */
+volatile uint32_t g_vdda_mv = VDDA_NOMINAL_MV;
 
 /* ---------- helpers ---------- */
-static void led_set(int on)
+static uint32_t duty_from_raw(uint16_t raw)
 {
-    GPIO_PinState s = (on == LED_ACTIVE_HIGH) ? GPIO_PIN_SET : GPIO_PIN_RESET;
-    HAL_GPIO_WritePin(GPIO_PORT, LED_PIN, s);
 }
 
 static void GPIO_Init(void)
@@ -46,25 +48,25 @@ static void GPIO_Init(void)
 
     GPIO_InitTypeDef g = {0};
 
-    g.Pin = LED_PIN; /* LED output */
-    g.Mode = GPIO_MODE_OUTPUT_PP;
+    g.Pin = LED_PIN;
+    g.Mode = GPIO_MODE_AF_PP;
     g.Pull = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIO_PORT, &g);
-    led_set(0);
+    g.Alternate = GPIO_AF1_TIM2;
+    HAL_GPIO_Init(LED_PORT, &g);
 
     g.Pin = GPIO_PIN_2; /* USART2 TX */
     g.Mode = GPIO_MODE_AF_PP;
     g.Pull = GPIO_PULLUP;
     g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     g.Alternate = GPIO_AF7_USART2;
-    HAL_GPIO_Init(GPIO_PORT, &g);
+    HAL_GPIO_Init(GPIOA, &g);
 
     g.Pin = LDR_PIN; /* LDR input */
     g.Mode = GPIO_MODE_ANALOG;
     g.Pull = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIO_PORT, &g);
+    HAL_GPIO_Init(LDR_PORT, &g);
 }
 
 static void UART2_Init(void)
@@ -123,25 +125,47 @@ static void ADC_Init(void)
     HAL_NVIC_EnableIRQ(ADC_IRQn);
 }
 
-/* Generic helper: timer that only produces a TRGO pulse on every update event. */
-static void TimerTrgo_Init(TIM_HandleTypeDef *h, TIM_TypeDef *inst, uint32_t period_ms)
+static void TIM2_Init(void)
 {
-    h->Instance = inst;
-    h->Init.Prescaler = 16000 - 1; /* 16 MHz / 16000 = 1 kHz */
-    h->Init.CounterMode = TIM_COUNTERMODE_UP;
-    h->Init.Period = period_ms - 1; /* 1 kHz / period_ms */
-    h->Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    h->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    HAL_TIM_Base_Init(h);
+    __HAL_RCC_TIM2_CLK_ENABLE();
 
-    __HAL_TIM_CLEAR_FLAG(h, TIM_FLAG_UPDATE);
+    htim2.Instance = TIM2;
+    htim2.Init.Prescaler = PWM_PSC - 1; /* 16 MHz / 16 = 1 MHz */
+    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim2.Init.Period = PWM_ARR; /* 1 MHz / 1000 = 1 kHz */
+    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_PWM_Init(&htim2);
+
+    TIM_MasterConfigTypeDef m = {0};
+    m.MasterOutputTrigger = TIM_TRGO_UPDATE; /* update event -> TRGO -> ADC trigger (kept) */
+    m.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim2, &m);
+
+    __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+}
+
+static void TIM5_Init(uint32_t period_ms)
+{
+    __HAL_RCC_TIM5_CLK_ENABLE();
+
+    htim5.Instance = TIM5;
+    htim5.Init.Prescaler = 16000 - 1; /* 16 MHz / 16000 = 1 kHz */
+    htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim5.Init.Period = period_ms - 1;
+    htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_Base_Init(&htim5);
+
+    __HAL_TIM_CLEAR_FLAG(&htim5, TIM_FLAG_UPDATE);
 
     TIM_MasterConfigTypeDef m = {0};
     m.MasterOutputTrigger = TIM_TRGO_UPDATE;
     m.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-    HAL_TIMEx_MasterConfigSynchronization(h, &m);
-    __HAL_TIM_CLEAR_FLAG(h, TIM_FLAG_UPDATE);
-    HAL_TIM_Base_Start(h);
+    HAL_TIMEx_MasterConfigSynchronization(&htim5, &m);
+    __HAL_TIM_CLEAR_FLAG(&htim5, TIM_FLAG_UPDATE);
+    HAL_TIM_Base_Start(&htim5);
 }
 
 void Error_Handler(void);
@@ -151,11 +175,8 @@ int main(void)
     HAL_Init();
     GPIO_Init();
     UART2_Init();
-
-    __HAL_RCC_TIM2_CLK_ENABLE();
-    __HAL_RCC_TIM5_CLK_ENABLE();
-    TimerTrgo_Init(&htim2, TIM2, LDR_PERIOD_MS);
-    TimerTrgo_Init(&htim5, TIM5, VREF_PERIOD_MS);
+    TIM2_Init();
+    TIM5_Init(VREF_PERIOD_MS);
     ADC_Init();
 
     setvbuf(stdout, NULL, _IONBF, 0); /* no buffering: text appears immediately */
@@ -168,15 +189,16 @@ int main(void)
         if (g_new)
         {
             uint16_t raw = g_raw;
+            uint32_t duty = g_duty;
             uint32_t vdda = g_vdda_mv;
             g_new = false;
 
-            uint32_t before = raw * VDDA_NOMINAL_MV / 4095u;
-            uint32_t after = raw * vdda / 4095u;
+            uint32_t before = (uint32_t)raw * VDDA_NOMINAL_MV / 4095u; /* assumes VDDA = 3.300 V */
+            uint32_t after = (uint32_t)raw * vdda / 4095u;             /* uses measured VDDA     */
 
-                printf("raw=%u  vdda=%u mV  before=%u mV  after=%u mV  diff=%d mV\r\n",
-                       (unsigned)raw, (unsigned)vdda, (unsigned)before, (unsigned)after,
-                       (int)after - (int)before);
+            printf("raw=%u  vdda=%u mV  before=%u mV  after=%u mV  led=%u%%\r\n",
+                   (unsigned)raw, (unsigned)vdda, (unsigned)before, (unsigned)after,
+                   (unsigned)(duty * 100u / PWM_STEPS));
         }
     }
 }
@@ -208,20 +230,19 @@ extern "C"
 
     void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     {
+        static uint16_t cnt = 0;
+
         if (ADC1 == hadc->Instance)
         {
-            g_raw = (uint16_t)HAL_ADC_GetValue(hadc);
-            g_new = true;
+            uint16_t raw = (uint16_t)HAL_ADC_GetValue(hadc);
+            
 
-            if (!g_dark && g_raw < TH_DARK)
+            g_raw = raw;
+            g_duty = duty;
+            if (++cnt >= PRINT_EVERY)
             {
-                g_dark = true;
-                led_set(1);
-            }
-            else if (g_dark && g_raw > TH_LIGHT)
-            {
-                g_dark = false;
-                led_set(0);
+                cnt = 0;
+                g_new = true;
             }
         }
     }
@@ -234,23 +255,18 @@ extern "C"
         static uint8_t cnt = 0;
 
         if (ADC1 != hadc->Instance)
-        {
             return;
-        }
+
         uint16_t data = (uint16_t)HAL_ADCEx_InjectedGetValue(hadc, ADC_INJECTED_RANK_1);
         sum -= buf[idx];
         buf[idx] = data;
         sum += data;
-        idx = (idx + 1) % VREFINT_AVG_N;
-
+        idx = (uint8_t)((idx + 1) % VREFINT_AVG_N);
         if (cnt < VREFINT_AVG_N)
-        {
             cnt++;
-        }
 
         uint32_t avg = sum / cnt;
-
-        if (0 != avg)
+        if (avg != 0)
         {
             g_vdda_mv = VDDA_NOMINAL_MV * (*VREFINT_CAL_ADDR) / avg;
         }
