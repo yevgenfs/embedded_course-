@@ -6,7 +6,8 @@
 #define LED_PIN GPIO_PIN_1 /* TIM2_CH2, AF1 */
 
 #define PWM_FREQ_HZ 1000U
-#define TIM_TICK_HZ 1000000U /* 16 MHz / PSC 16 */
+#define TIM_TICK_HZ 1000000U  /* 16 MHz / PSC 16 */
+#define TIM_FREQ_HZ 16000000U /* 16 MHz */
 #define PWM_PSC 16U
 #define PWM_ARR (TIM_TICK_HZ / PWM_FREQ_HZ - 1U)
 
@@ -77,12 +78,28 @@ static void TIM2_Init(void)
 
 static void set_tone_freq(int freq_hz)
 {
+    if (0 == freq_hz)
+    {
+        HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+        return;
+    }
 
+    uint32_t f_clk = TIM_FREQ_HZ;
+    uint32_t psc = PWM_PSC - 1;
+    uint32_t arr = (f_clk / (psc + 1)) / freq_hz - 1;
+
+    __HAL_TIM_SET_AUTORELOAD(&htim2, arr);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, arr / 2);
+    __HAL_TIM_SET_COUNTER(&htim2, 0);
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
 }
 
 static void play_note(int frequency_hz, int duration_ms)
 {
-
+    set_tone_freq(frequency_hz);
+    HAL_Delay(duration_ms);
+    set_tone_freq(0);
+    HAL_Delay(50);
 }
 
 void Error_Handler(void);
@@ -134,7 +151,7 @@ extern "C"
         HAL_UART_Transmit(&huart2, (uint8_t *)ptr, (uint16_t)len, HAL_MAX_DELAY);
         return len;
     }
-    
+
 #ifdef __cplusplus
 }
 #endif
