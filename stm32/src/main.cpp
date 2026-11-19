@@ -15,8 +15,8 @@
 #define PWM_PSC 16U
 #define PWM_ARR (TIM_TICK_HZ / SERVO_FREQ_HZ - 1U) /* 20000 - 1 = 20 ms */
 
-#define SERVO_MIN_US 500U /* pulse for 0 deg   (tune for your servo) */
-#define SERVO_MAX_US 2400U /* pulse for 180 deg (tune for your servo) */
+#define SERVO_MIN_US 1000U /* pulse for 0 deg   (tune for your servo) */
+#define SERVO_MAX_US 2000U /* pulse for 180 deg (tune for your servo) */
 #define SERVO_MAX_ANGLE 180U
 
 #define ADC_MAX 4095U
@@ -160,25 +160,25 @@ int main(void)
 
     while (1)
     {
-        // __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 500);
-        // HAL_Delay(2000); // мінімум
-        // __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 2400);
-        // HAL_Delay(2000); // максимум
-        // __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1450);
-        // HAL_Delay(2000); // центр
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 500);
+        HAL_Delay(2000); // мінімум
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 2400);
+        HAL_Delay(2000); // максимум
+        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1450);
+        HAL_Delay(2000); // центр
 
-        uint32_t raw = adc_read_avg();
+        // uint32_t raw = adc_read_avg();
 
-        int angle = 
+        // int angle = 
 
-        if (abs(angle - last_angle) >= ANGLE_HYST)
-        {
-            last_angle = angle;
-            set_servo_angle((uint32_t)angle);
-            printf("ADC=%4lu  angle=%3d deg\r\n", (unsigned long)raw, angle);
-        }
+        // if (abs(angle - last_angle) >= ANGLE_HYST)
+        // {
+        //     last_angle = angle;
+        //     set_servo_angle((uint32_t)angle);
+        //     printf("ADC=%4lu  angle=%3d deg\r\n", (unsigned long)raw, angle);
+        // }
 
-        HAL_Delay(20); /* one servo period */
+        // HAL_Delay(20); /* one servo period */
     }
 }
 
