@@ -143,7 +143,7 @@ static void set_servo_angle(uint32_t angle)
     {
         angle = SERVO_MAX_ANGLE;
     }
-    
+
     uint32_t pulse = SERVO_MIN_US + ((SERVO_MAX_US - SERVO_MIN_US) * angle) / SERVO_MAX_ANGLE;
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse);
 }
@@ -181,7 +181,7 @@ int main(void)
         {
             last_angle = angle;
             set_servo_angle((uint32_t)angle);
-            printf("ADC=%4lu  angle=%3d deg\r\n", (unsigned long)raw, angle);
+            printf("ADC raw=%4lu  angle=%3d deg\r\n", (unsigned long)raw, angle);
         }
 
         HAL_Delay(20); /* one servo period */
