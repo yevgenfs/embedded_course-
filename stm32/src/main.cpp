@@ -1,13 +1,13 @@
 #include "stm32f4xx_hal.h"
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 /* ---------- pins ---------- */
 #define SERVO_PORT GPIOA
 #define SERVO_PIN GPIO_PIN_1 /* TIM2_CH2, AF1 */
-#define POT_PORT GPIOA
-#define POT_PIN GPIO_PIN_0 /* ADC1_IN0 */
+#define ENC_PORT GPIOB
+#define ENC_A_PIN GPIO_PIN_6 /* TIM4_CH1, AF2 */
+#define ENC_B_PIN GPIO_PIN_7 /* TIM4_CH2, AF2 */
 
 /* ---------- servo PWM: 50 Hz, pulse in microseconds ---------- */
 #define SERVO_FREQ_HZ 50U
@@ -15,24 +15,26 @@
 #define PWM_PSC 16U
 #define PWM_ARR (TIM_TICK_HZ / SERVO_FREQ_HZ - 1U) /* 20000 - 1 = 20 ms */
 
-#define SERVO_MIN_US 500U  /* pulse for 0 deg   (tune for your servo) */
-#define SERVO_MAX_US 2400U /* pulse for 180 deg (tune for your servo) */
+#define SERVO_MIN_US 500U  /* pulse for 0 deg   */
+#define SERVO_MAX_US 2400U /* pulse for 180 deg */
 #define SERVO_MAX_ANGLE 180U
 
-#define ADC_MAX 4095U
-#define ADC_SAMPLES 8U
-#define ANGLE_HYST 1 /* ignore changes smaller than this (deg) -> no jitter */
+/* ---------- encoder ---------- */
+#define ENC_COUNTS_PER_DETENT 4 /* EC11: 4 counts per click (use 2 if it skips) */
+#define ENC_DEG_PER_DETENT 5    /* servo degrees per click */
+#define ENC_MAX_COUNTS ((SERVO_MAX_ANGLE / ENC_DEG_PER_DETENT) * ENC_COUNTS_PER_DETENT)
 
 /* ---------- globals ---------- */
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim4;
 UART_HandleTypeDef huart2;
-ADC_HandleTypeDef hadc1;
 
 /* ---------- helpers ---------- */
 
 static void GPIO_Init(void)
 {
     __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
 
     GPIO_InitTypeDef g = {0};
 
@@ -52,11 +54,13 @@ static void GPIO_Init(void)
     g.Alternate = GPIO_AF7_USART2;
     HAL_GPIO_Init(GPIOA, &g);
 
-    /* Potentiometer: analog input */
-    g.Pin = POT_PIN;
-    g.Mode = GPIO_MODE_ANALOG;
-    g.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(POT_PORT, &g);
+    /* Encoder A/B: timer inputs with pull-ups (encoder common goes to GND) */
+    g.Pin = ENC_A_PIN | ENC_B_PIN;
+    g.Mode = GPIO_MODE_AF_PP;
+    g.Pull = GPIO_PULLUP;
+    g.Speed = GPIO_SPEED_FREQ_LOW;
+    g.Alternate = GPIO_AF2_TIM4;
+    HAL_GPIO_Init(ENC_PORT, &g);
 }
 
 static void UART2_Init(void)
@@ -96,56 +100,46 @@ static void TIM2_Init(void)
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
 }
 
-static void ADC1_Init(void)
+/* TIM4 in hardware quadrature encoder mode (counts on both edges of A and B) */
+static void TIM4_Encoder_Init(void)
 {
-    __HAL_RCC_ADC1_CLK_ENABLE();
+    __HAL_RCC_TIM4_CLK_ENABLE();
 
-    hadc1.Instance = ADC1;
-    hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
-    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-    hadc1.Init.ScanConvMode = DISABLE;
-    hadc1.Init.ContinuousConvMode = DISABLE;
-    hadc1.Init.DiscontinuousConvMode = DISABLE;
-    hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-    hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-    hadc1.Init.NbrOfConversion = 1;
-    hadc1.Init.DMAContinuousRequests = DISABLE;
-    hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-    HAL_ADC_Init(&hadc1);
+    htim4.Instance = TIM4;
+    htim4.Init.Prescaler = 0;
+    htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim4.Init.Period = 0xFFFF;
+    htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
-    ADC_ChannelConfTypeDef ch = {0};
-    ch.Channel = ADC_CHANNEL_0; /* PA0 */
-    ch.Rank = 1;
-    ch.SamplingTime = ADC_SAMPLETIME_84CYCLES;
-    HAL_ADC_ConfigChannel(&hadc1, &ch);
-}
+    TIM_Encoder_InitTypeDef e = {0};
+    e.EncoderMode = TIM_ENCODERMODE_TI12;
+    e.IC1Polarity = TIM_ENCODERINPUTPOLARITY_RISING;
+    e.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+    e.IC1Prescaler = TIM_ICPSC_DIV1;
+    e.IC1Filter = 15;
+    e.IC2Polarity = TIM_ENCODERINPUTPOLARITY_RISING;
+    e.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+    e.IC2Prescaler = TIM_ICPSC_DIV1;
+    e.IC2Filter = 15;
 
-static uint32_t adc_read_avg(void)
-{
-    uint32_t sum = 0;
+    HAL_TIM_Encoder_Init(&htim4, &e);
 
-    for (uint32_t i = 0; i < ADC_SAMPLES; i++)
-    {
-        HAL_ADC_Start(&hadc1);
-        HAL_ADC_PollForConversion(&hadc1, 10);
-        sum += HAL_ADC_GetValue(&hadc1);
-        HAL_ADC_Stop(&hadc1);
-    }
-    return sum / ADC_SAMPLES;
+    HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 }
 
 /* Set servo angle 0..180 deg */
 static void set_servo_angle(uint32_t angle)
 {
-
-    if (angle > SERVO_MAX_ANGLE) 
+    if (angle > SERVO_MAX_ANGLE)
     {
         angle = SERVO_MAX_ANGLE;
     }
 
-    uint32_t pulse = SERVO_MIN_US + ((SERVO_MAX_US - SERVO_MIN_US) * angle) / SERVO_MAX_ANGLE;
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse);
+    uint32_t pulse_us = SERVO_MIN_US +
+                        ((SERVO_MAX_US - SERVO_MIN_US) * angle) / SERVO_MAX_ANGLE;
+
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pulse_us); /* 1 tick = 1 us */
 }
 
 void Error_Handler(void);
@@ -156,35 +150,43 @@ int main(void)
     GPIO_Init();
     UART2_Init();
     TIM2_Init();
-    ADC1_Init();
+    TIM4_Encoder_Init();
 
     setvbuf(stdout, NULL, _IONBF, 0); /* no buffering: text appears immediately */
 
-    printf("Servo control started\r\n");
+    int32_t pos = ENC_MAX_COUNTS / 2;
+    uint16_t last_cnt = (uint16_t)__HAL_TIM_GET_COUNTER(&htim4);
+    int last_angle = -1;
 
-    int last_angle = -100; /* force first update */
+    printf("Encoder servo control started\r\n");
 
     while (1)
     {
-        // __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 500);
-        // HAL_Delay(2000); // мінімум
-        // __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 2400);
-        // HAL_Delay(2000); // максимум
-        // __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1450);
-        // HAL_Delay(2000); // центр
 
-        uint32_t raw = adc_read_avg();
+        uint16_t cnt = (uint16_t)__HAL_TIM_GET_COUNTER(&htim4);
+        int16_t delta = (uint16_t)(cnt - last_cnt);
 
-        int angle = (int)((raw * SERVO_MAX_ANGLE) / ADC_MAX); // angle / SERVO_MAX_ANGLE = raw / ADC_MAX
+        pos += delta;
 
-        if (abs(angle - last_angle) >= ANGLE_HYST)
+        if (0 > pos)
+        {
+            pos = 0;
+        }
+        if (ENC_MAX_COUNTS < pos)
+        {
+            pos = ENC_MAX_COUNTS;
+        }
+
+        int angle = (int)((pos * ENC_DEG_PER_DETENT) / ENC_COUNTS_PER_DETENT);
+
+        if (angle != last_angle)
         {
             last_angle = angle;
             set_servo_angle((uint32_t)angle);
-            printf("ADC raw=%4lu  angle=%3d deg\r\n", (unsigned long)raw, angle);
+            printf("enc=%3ld  angle=%3d deg\r\n", (long)pos, angle);
         }
 
-        HAL_Delay(20); /* one servo period */
+        HAL_Delay(5);
     }
 }
 
