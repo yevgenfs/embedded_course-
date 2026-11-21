@@ -114,11 +114,11 @@ static void TIM4_Encoder_Init(void)
 
     TIM_Encoder_InitTypeDef e = {0};
     e.EncoderMode = TIM_ENCODERMODE_TI12;
-    e.IC1Polarity = TIM_ENCODERINPUTPOLARITY_RISING;
+    e.IC1Polarity = TIM_ICPOLARITY_RISING;
     e.IC1Selection = TIM_ICSELECTION_DIRECTTI;
     e.IC1Prescaler = TIM_ICPSC_DIV1;
     e.IC1Filter = 15;
-    e.IC2Polarity = TIM_ENCODERINPUTPOLARITY_RISING;
+    e.IC2Polarity = TIM_ICPOLARITY_RISING;
     e.IC2Selection = TIM_ICSELECTION_DIRECTTI;
     e.IC2Prescaler = TIM_ICPSC_DIV1;
     e.IC2Filter = 15;
@@ -165,6 +165,7 @@ int main(void)
 
         uint16_t cnt = (uint16_t)__HAL_TIM_GET_COUNTER(&htim4);
         int16_t delta = (uint16_t)(cnt - last_cnt);
+        last_cnt = cnt;
 
         pos += delta;
 
@@ -172,7 +173,7 @@ int main(void)
         {
             pos = 0;
         }
-        if (ENC_MAX_COUNTS < pos)
+        if (ENC_MAX_COUNTS < (uint32_t)pos)
         {
             pos = ENC_MAX_COUNTS;
         }
